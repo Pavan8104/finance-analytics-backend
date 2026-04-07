@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from decimal import Decimal
@@ -90,3 +92,59 @@ class TransactionService:
             db.delete(obj)
             db.commit()
         return obj
+
+    @staticmethod
+    def export_to_csv(
+        db: Session,
+        *,
+        owner_id: int,
+        category: Optional[str] = None,
+        type: Optional[TransactionType] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> io.StringIO:
+        """
+        Build an in-memory CSV of the user's transactions.
+
+        We apply the same filters as the list endpoint so the export
+        always matches what the user sees on screen — no surprises.
+        Ordered oldest-first so the file reads chronologically (more
+        natural when you open it in Excel or Google Sheets).
+        """
+        query = (
+            db.query(Transaction)
+            .filter(Transaction.owner_id == owner_id)
+        )
+
+        # Apply optional filters — same logic as get_multi
+        if category:
+            query = query.filter(func.lower(Transaction.category) == category.lower())
+        if type:
+            query = query.filter(Transaction.type == type)
+        if start_date:
+            query = query.filter(Transaction.date >= start_date)
+        if end_date:
+            query = query.filter(Transaction.date <= end_date)
+
+        # Oldest first — makes more sense for a financial statement
+        transactions = query.order_by(Transaction.date.asc()).all()
+
+        # Write into a string buffer so we never touch the filesystem
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+
+        # Header row
+        writer.writerow(["ID", "Date", "Type", "Category", "Amount", "Notes"])
+
+        for tx in transactions:
+            writer.writerow([
+                tx.id,
+                tx.date.strftime("%Y-%m-%d") if tx.date else "",
+                tx.type.value,
+                tx.category,
+                str(tx.amount),   # Decimal → string to avoid float weirdness in CSV
+                tx.notes or "",
+            ])
+
+        buffer.seek(0)
+        return buffer

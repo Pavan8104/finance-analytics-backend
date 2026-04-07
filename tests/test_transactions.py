@@ -227,3 +227,49 @@ class TestDeleteTransaction:
 
         response = viewer_client.delete(f"/api/v1/transactions/{admin_tx.id}")
         assert response.status_code == 404
+
+
+class TestExportTransactions:
+    """Tests for GET /api/v1/transactions/export (CSV download)."""
+
+    def test_export_returns_csv_file(self, viewer_client):
+        """A user with transactions should get a valid CSV back."""
+        viewer_client.post("/api/v1/transactions/", json=INCOME_PAYLOAD)
+        viewer_client.post("/api/v1/transactions/", json=EXPENSE_PAYLOAD)
+
+        response = viewer_client.get("/api/v1/transactions/export")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+        assert "attachment" in response.headers["content-disposition"]
+        assert ".csv" in response.headers["content-disposition"]
+
+        # Parse the CSV and check the header row + data rows
+        lines = response.text.strip().splitlines()
+        assert lines[0] == "ID,Date,Type,Category,Amount,Notes"
+        assert len(lines) == 3  # header + 2 transactions
+
+    def test_export_requires_auth(self, client):
+        """Unauthenticated requests should be rejected."""
+        response = client.get("/api/v1/transactions/export")
+        assert response.status_code == 401
+
+    def test_export_empty_for_new_user(self, viewer_client):
+        """A fresh user with no transactions gets a header-only CSV."""
+        response = viewer_client.get("/api/v1/transactions/export")
+        assert response.status_code == 200
+        lines = response.text.strip().splitlines()
+        assert len(lines) == 1  # just the header
+        assert lines[0] == "ID,Date,Type,Category,Amount,Notes"
+
+    def test_export_respects_type_filter(self, viewer_client):
+        """Filtering by type should limit CSV rows to that type only."""
+        viewer_client.post("/api/v1/transactions/", json=INCOME_PAYLOAD)
+        viewer_client.post("/api/v1/transactions/", json=EXPENSE_PAYLOAD)
+
+        response = viewer_client.get("/api/v1/transactions/export?type=income")
+        assert response.status_code == 200
+        lines = response.text.strip().splitlines()
+        # Header + 1 income row only
+        assert len(lines) == 2
+        assert "income" in lines[1]
+
