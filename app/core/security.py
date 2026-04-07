@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from typing import Any, Union, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional, Union
 
 from jose import jwt
 import bcrypt
@@ -7,29 +7,61 @@ import bcrypt
 from app.core.config import settings
 
 
+# ---------------------------------------------------------------------------
+# Token creation
+# ---------------------------------------------------------------------------
+
 def create_access_token(
-    subject: Union[str, Any], expires_delta: timedelta = None, additional_claims: Dict[str, Any] = None
+    subject: Union[str, Any],
+    expires_delta: Optional[timedelta] = None,
+    additional_claims: Optional[Dict[str, Any]] = None,
 ) -> str:
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
-    to_encode = {"exp": expire, "sub": str(subject)}
-    if additional_claims:
-        to_encode.update(additional_claims)
-
-    encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    """Create a signed JWT access token."""
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    return encoded_jwt
+    payload: Dict[str, Any] = {
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "sub": str(subject),
+        "type": "access",
+    }
+    if additional_claims:
+        payload.update(additional_claims)
 
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def create_refresh_token(subject: Union[str, Any]) -> str:
+    """Create a signed JWT refresh token (longer TTL, type=refresh)."""
+    expire = datetime.now(timezone.utc) + timedelta(
+        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+    )
+    payload: Dict[str, Any] = {
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "sub": str(subject),
+        "type": "refresh",
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+# ---------------------------------------------------------------------------
+# Password hashing
+# ---------------------------------------------------------------------------
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    """Constant-time bcrypt password verification."""
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    salt = bcrypt.gensalt()
+    """Hash a plaintext password using bcrypt with a secure cost factor."""
+    salt = bcrypt.gensalt(rounds=12)  # rounds=12 is OWASP recommended minimum
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")

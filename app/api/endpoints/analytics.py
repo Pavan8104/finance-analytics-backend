@@ -1,23 +1,29 @@
 from typing import Any
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.analytics import AnalyticsReport
-from app.services.analytics_service import AnalyticsService
 from app.core.dependencies import get_current_active_analyst_or_admin
 from app.models.user import User as UserModel
+from app.schemas.analytics import AnalyticsReport
+from app.services.analytics_service import AnalyticsService
 
 router = APIRouter()
 
-@router.get("/report", response_model=AnalyticsReport)
+
+@router.get(
+    "/report",
+    response_model=AnalyticsReport,
+    summary="Get financial analytics report",
+    description=(
+        "Returns a comprehensive financial analytics report including totals, "
+        "category breakdowns, and monthly trends. "
+        "Cached for 5 minutes per user. **Requires Analyst or Admin role.**"
+    ),
+)
 def get_analytics_report(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_analyst_or_admin),
 ) -> Any:
-    """
-    Get financial analytics report.
-    Access restricted to Admin or Analyst.
-    """
-    report = AnalyticsService.generate_report(db, owner_id=current_user.id)
-    return report
+    return AnalyticsService.generate_report(db, owner_id=current_user.id)
