@@ -1,4 +1,4 @@
-# Finance Analytics Backend
+# Finance Analytics Backend system
 
 ## 👨‍💻 Project By
 Pavan Sharma
